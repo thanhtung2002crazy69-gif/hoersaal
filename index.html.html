@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hörsaal-Dolmetscher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen app — header, translated paragraphs scrolling, live dock (the paragraph being built) pinned at the bottom, settings as a side sheet. */
+:root {
+  --bg: #f2f5f1; --surface: #ffffff; --surface-2: #e7ece6; --fg: #16201b; --muted: #5a6760; --de: #3a4a41;
+  --line: #d3dbd2; --accent: #1d6a4e; --accent-fg: #ffffff; --accent-soft: #dcebe3; --rec: #c2352a;
+  --warn-bg: #fbf0d6; --warn-fg: #6b4a00; --scrim: rgba(16, 24, 20, .42);
+  --f-ui: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --f-de: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --vi-size: 24px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1412; --surface: #151c19; --surface-2: #1d2622; --fg: #e5ece7; --muted: #8e9b94;
+    --de: #b4c1b9; --line: #29342f; --accent: #6bc29e; --accent-fg: #0a1a12; --accent-soft: #1b2f26;
+    --rec: #ff6a5c; --warn-bg: #3a2e12; --warn-fg: #f1d28c; --scrim: rgba(0, 0, 0, .6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1412; --surface: #151c19; --surface-2: #1d2622; --fg: #e5ece7; --muted: #8e9b94;
+  --de: #b4c1b9; --line: #29342f; --accent: #6bc29e; --accent-fg: #0a1a12; --accent-soft: #1b2f26;
+  --rec: #ff6a5c; --warn-bg: #3a2e12; --warn-fg: #f1d28c; --scrim: rgba(0, 0, 0, .6);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--f-ui);
+  display: flex; flex-direction: column; overflow: hidden;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.inner { max-width: 880px; margin: 0 auto; width: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+.top { flex: none; background: var(--surface); border-bottom: 1px solid var(--line); padding-block: 10px; }
+.top .inner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.brand { display: grid; min-width: 0; }
+.brand h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+.brand .sub { font: 12px/1.3 var(--f-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); font: 500 12px/1.4 var(--f-mono); white-space: nowrap; }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.status[data-state="listening"] { background: var(--accent-soft); }
+.status[data-state="listening"] .dot { background: var(--rec); animation: pulse 1.4s ease-in-out infinite; }
+.status[data-state="error"] { background: var(--warn-bg); color: var(--warn-fg); }
+.status .clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+.meter { width: 38px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .08s linear; }
+@keyframes pulse { 50% { opacity: .25; } }
+.actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 14px; font-weight: 500; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; min-width: 132px; }
+.btn.primary.on { background: var(--surface); color: var(--fg); border-color: var(--rec); }
+.btn.danger { color: var(--rec); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.banner { flex: none; background: var(--warn-bg); color: var(--warn-fg); padding-block: 10px; font-size: 14px; }
+.banner code { font: 13px var(--f-mono); }
+
+.wrap { position: relative; flex: 1; min-height: 0; display: flex; }
+#feed { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-block: 8px 24px; }
+.seg { display: grid; gap: 4px; padding-block: 14px; border-bottom: 1px solid var(--line); }
+.seg:last-child { border-bottom: 0; }
+.meta { display: flex; align-items: center; gap: 10px; font: 12px/1.4 var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.tag { text-transform: uppercase; letter-spacing: .08em; font-size: 10.5px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; }
+.eng { margin-left: auto; }
+.de { margin: 0; font-family: var(--f-de); font-size: max(15px, calc(var(--vi-size) * .7)); line-height: 1.45; color: var(--de); text-wrap: pretty; }
+.vi { margin: 0; font-size: var(--vi-size); line-height: 1.42; font-weight: 500; text-wrap: pretty; }
+.seg.pending .vi, .seg.error .vi { color: var(--muted); font-style: italic; font-weight: 400; font-size: calc(var(--vi-size) * .75); }
+.retry { justify-self: start; margin-top: 4px; }
+body.no-de .seg .de { display: none; }
+.empty { margin: 12vh auto 0; max-width: 46ch; text-align: center; color: var(--muted); display: grid; gap: 8px; }
+.empty strong { color: var(--fg); font-size: 18px; }
+.example-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.jump { position: absolute; bottom: 12px; right: max(16px, env(safe-area-inset-right, 0px)); border: 0; border-radius: 999px; padding: 8px 14px; background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 13px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+
+.dock { flex: none; background: var(--surface); border-top: 2px solid var(--accent); padding-block: 12px 14px; max-height: 42vh; overflow-y: auto; }
+.dock .inner { display: grid; gap: 4px; }
+.live-label { display: flex; gap: 10px; font: 500 11px/1.4 var(--f-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--accent); }
+.live-label .q { margin-left: auto; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.live-de { margin: 0; font-family: var(--f-de); color: var(--de); font-size: max(15px, calc(var(--vi-size) * .7)); min-height: 1.4em; }
+.live-de .interim { color: var(--muted); font-style: italic; }
+.live-de:empty::before { content: "—"; color: var(--muted); }
+.live-vi { margin: 0; font-size: calc(var(--vi-size) * .85); line-height: 1.42; color: var(--fg); opacity: .72; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 74px); z-index: 30; max-width: min(560px, calc(100% - 32px)); background: var(--fg); color: var(--bg); padding: 10px 14px; border-radius: 10px; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+
+.sheet { position: fixed; inset: 0; z-index: 20; background: var(--scrim); display: flex; justify-content: flex-end; }
+.panel { width: min(460px, 100%); height: 100%; overflow-y: auto; background: var(--surface); border-left: 1px solid var(--line);
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) max(18px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 24px) 18px;
+  display: grid; gap: 22px; align-content: start; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; }
+.panel-head h2 { margin: 0; font-size: 18px; }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; min-width: 0; }
+legend { font: 500 11px/1.4 var(--f-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); padding: 0; margin-bottom: 10px; }
+.choice { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.choice:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.choice input { margin: 4px 0 0; accent-color: var(--accent); }
+.choice b { font-weight: 600; font-size: 15px; }
+.choice small { grid-column: 2; color: var(--muted); font-size: 13px; line-height: 1.4; }
+label.field { display: grid; gap: 4px; font-size: 14px; font-weight: 500; }
+label.field small { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+.input { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); min-width: 0; }
+textarea.input { min-height: 120px; resize: vertical; font-family: var(--f-de); font-size: 14px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.check input { margin-top: 3px; accent-color: var(--accent); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.claude-box { display: grid; gap: 12px; padding: 12px; border-radius: 10px; background: var(--surface-2); }
+.test-out { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+.tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+.tips li::marker { color: var(--accent); }
+kbd { font: 12px var(--f-mono); padding: 1px 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; }
+@media (max-width: 560px) {
+  .actions { margin-left: 0; width: 100%; }
+  .actions .btn.primary { flex: 1; }
+  .btn { padding: 8px 11px; }
+}
+@media (prefers-reduced-motion: reduce) { .status[data-state="listening"] .dot { animation: none; } .meter i { transition: none; } }
+</style>
+</head>
+<body>
+
+<header class="top gutter">
+  <div class="inner">
+    <div class="brand">
+      <h1>Hörsaal-Dolmetscher</h1>
+      <span class="sub" id="sub">Đức → Việt · trực tiếp</span>
+    </div>
+    <span class="status" id="status" data-state="idle" role="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span><span id="status-text">Sẵn sàng</span>
+      <span class="meter" title="Mức âm thanh micro" aria-hidden="true"><i id="meter"></i></span>
+      <span class="clock" id="clock">00:00</span>
+    </span>
+    <div class="actions">
+      <button class="btn primary" id="toggle" type="button">Bắt đầu nghe</button>
+      <button class="btn" id="open-settings" type="button">Cài đặt</button>
+      <button class="btn" id="export" type="button">Lưu .txt</button>
+      <button class="btn danger" id="clear" type="button">Xoá</button>
+    </div>
+  </div>
+</header>
+
+<div class="banner gutter" id="unsupported" hidden>
+  <div class="inner">Trình duyệt này không có nhận dạng giọng nói. Hãy mở bằng <b>Google Chrome</b> hoặc <b>Microsoft Edge</b> trên máy tính.</div>
+</div>
+<div class="banner gutter" id="file-warning" hidden>
+  <div class="inner">Bạn đang mở file trực tiếp (<code>file://</code>), nên Chrome có thể hỏi quyền micro nhiều lần. Để chỉ hỏi <b>một lần duy nhất</b>, hãy mở qua địa chỉ <code>http://localhost</code> hoặc một trang <code>https://</code> (xem Cài đặt → Mẹo).</div>
+</div>
+
+<div class="wrap">
+  <main id="feed" class="gutter" aria-label="Bản dịch bài giảng">
+    <div class="inner">
+      <div id="feed-list"></div>
+      <p class="example-note" id="example-note" hidden>Hai đoạn trên là ví dụ, sẽ biến mất khi bạn bấm “Bắt đầu nghe”.</p>
+      <div class="empty" id="empty" hidden>
+        <strong>Chưa có đoạn nào</strong>
+        <span>Bấm “Bắt đầu nghe”. Lời thầy được ghép thành câu hoàn chỉnh rồi mới dịch, và máy vẫn nghe tiếp trong lúc dịch.</span>
+      </div>
+    </div>
+  </main>
+  <button class="jump" id="jump" type="button" hidden>↓ Đoạn mới nhất</button>
+</div>
+
+<section class="dock gutter" aria-label="Đoạn đang nghe">
+  <div class="inner">
+    <span class="live-label"><span>Đang nghe — đoạn chưa xong</span><span class="q" id="queue-info"></span></span>
+    <p class="live-de" id="live-de" lang="de"></p>
+    <p class="live-vi" id="live-vi" lang="vi" aria-live="polite"></p>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<div class="sheet" id="sheet" hidden>
+  <aside class="panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="panel-head">
+      <h2 id="settings-title">Cài đặt</h2>
+      <button class="btn" id="close-settings" type="button">Đóng</button>
+    </div>
+
+    <fieldset>
+      <legend>Bộ máy dịch</legend>
+      <label class="choice">
+        <input type="radio" name="engine" value="claude" id="eng-claude">
+        <b>Claude API (khuyên dùng)</b>
+        <small>Ghép câu bị cắt dở thành câu hoàn chỉnh, sửa thuật ngữ nghe nhầm theo ngữ cảnh môn học. Cần API key, trả phí theo lượng dùng.</small>
+      </label>
+      <label class="choice">
+        <input type="radio" name="engine" value="google" id="eng-google">
+        <b>Google Dịch</b>
+        <small>Miễn phí, không cần key. Chỉ ghép câu theo khoảng ngắt giọng, dịch thuật ngữ kém hơn.</small>
+      </label>
+      <label class="choice">
+        <input type="radio" name="engine" value="ondevice" id="eng-ondevice">
+        <b>Offline trong Chrome</b>
+        <small id="od-note">Đang kiểm tra…</small>
+      </label>
+      <div class="claude-box" id="claude-box" hidden>
+        <label class="field" for="api-key">Anthropic API key
+          <input class="input" id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+          <small>Tạo tại console.anthropic.com. Key chỉ lưu trong trình duyệt này và chỉ gửi tới api.anthropic.com.</small>
+        </label>
+        <label class="field" for="model">Mô hình
+          <select class="input" id="model">
+            <option value="claude-haiku-5-5">Claude Haiku 5.5 — nhanh nhất, rẻ</option>
+            <option value="claude-sonnet-5-5">Claude Sonnet 5.5 — chính xác hơn, chậm hơn</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="keep-terms"> <span>Giữ thuật ngữ tiếng Đức trong ngoặc, ví dụ “hiệu suất (Wirkungsgrad)”</span></label>
+        <div class="row">
+          <button class="btn" id="test-key" type="button">Kiểm tra key</button>
+          <span class="test-out" id="test-out"></span>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Chuyên ngành</legend>
+      <label class="field" for="topic">Môn học / chủ đề buổi này
+        <input class="input" id="topic" type="text" placeholder="VD: Leistungselektronik – Wechselrichter">
+      </label>
+      <label class="field" for="glossary">Thuật ngữ riêng của môn (mỗi dòng một từ)
+        <textarea class="input" id="glossary" spellcheck="false" placeholder="Wechselrichter = bộ nghịch lưu&#10;Zwischenkreiskondensator = tụ DC-link&#10;Rekuperation"></textarea>
+        <small>Có sẵn khoảng 60 thuật ngữ ô tô và xe điện. Thêm từ của môn bạn (lấy từ slide) để máy nghe và dịch đúng hơn. Phần “= nghĩa tiếng Việt” không bắt buộc.</small>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Cách ghép câu</legend>
+      <label class="field" for="pause">Coi là hết câu khi thầy ngừng: <span id="pause-val">1,2 giây</span>
+        <input type="range" id="pause" min="0.6" max="3" step="0.1">
+        <small>Thầy giảng nhanh, ít ngừng: giảm xuống. Câu hay bị cắt đôi: tăng lên. Với Claude, phần câu dở dang luôn được giữ lại và ghép vào đoạn sau.</small>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Hiển thị</legend>
+      <label class="field" for="font-size">Cỡ chữ bản dịch: <span id="font-size-val">24 px</span>
+        <input type="range" id="font-size" min="16" max="40" step="1">
+      </label>
+      <label class="check"><input type="checkbox" id="show-de"> <span>Hiện câu tiếng Đức</span></label>
+      <label class="check"><input type="checkbox" id="interim"> <span>Dịch nháp đoạn đang nghe (khung dưới cùng)</span></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Mẹo</legend>
+      <ul class="tips">
+        <li><b>Để chỉ hỏi quyền micro một lần:</b> đừng mở file bằng cách bấm đúp. Trong thư mục chứa file, chạy <code>python -m http.server 8000</code> rồi mở <code>http://localhost:8000/hoersaal-dolmetscher.html</code> trong Chrome, chọn “Cho phép mỗi khi truy cập”. Hoặc đưa file lên một trang https (GitHub Pages).</li>
+        <li>Máy chỉ xin micro một lần mỗi buổi và giữ micro mở suốt buổi. Nhận dạng giọng nói không dừng trong lúc dịch.</li>
+        <li>Ngồi gần loa hoặc dùng micro rời (đặt làm micro mặc định của máy).</li>
+        <li>Cần Internet (eduroam). Nên xin phép giảng viên trước.</li>
+        <li>Phím <kbd>Space</kbd>: bắt đầu / tạm dừng.</li>
+      </ul>
+    </fieldset>
+  </aside>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+
+  const DEFAULTS = { engine: 'google', apiKey: '', model: 'claude-haiku-5-5', topic: '', glossary: '', keepTerms: true, interim: true, showDe: true, fontSize: 24, pause: 1.2 };
+  const settings = Object.assign({}, DEFAULTS, store.get('hd.settings', {}));
+  const saveSettings = () => store.set('hd.settings', settings);
+  const ENGINE_LABEL = { google: 'Google', ondevice: 'Offline', claude: 'Claude' };
+
+  // Built-in domain vocabulary (automotive / e-mobility). Used to bias recognition where Chrome supports it, and as hints for Claude.
+  const BASE_TERMS = [
+    'Wirkungsgrad = hiệu suất', 'Drehmoment = mô-men xoắn', 'Leistungselektronik = điện tử công suất', 'Wechselrichter = bộ nghịch lưu',
+    'Gleichrichter = bộ chỉnh lưu', 'Tiefsetzsteller = bộ biến đổi hạ áp', 'Hochsetzsteller = bộ biến đổi tăng áp', 'Tastgrad = hệ số làm việc',
+    'Zwischenkreis = mạch DC trung gian', 'Synchronmaschine = máy điện đồng bộ', 'Asynchronmaschine = máy điện không đồng bộ',
+    'permanenterregt = kích thích nam châm vĩnh cửu', 'Statorwicklung = cuộn dây stato', 'Läufer = rôto', 'Feldschwächung = giảm từ thông',
+    'Batteriezelle = cell pin', 'Batteriemanagementsystem = hệ thống quản lý pin (BMS)', 'Ladezustand = trạng thái sạc (SoC)',
+    'Alterungszustand = trạng thái lão hoá (SoH)', 'Innenwiderstand = điện trở trong', 'Kapazität = dung lượng', 'Energiedichte = mật độ năng lượng',
+    'Ladeleistung = công suất sạc', 'Rekuperation = phanh tái sinh', 'Antriebsstrang = hệ truyền lực', 'Getriebe = hộp số',
+    'Übersetzung = tỷ số truyền', 'Differential = vi sai', 'Fahrwiderstand = lực cản chuyển động', 'Rollwiderstand = lực cản lăn',
+    'Luftwiderstand = lực cản không khí', 'Steigungswiderstand = lực cản dốc', 'Beschleunigungswiderstand = lực cản quán tính',
+    'Fahrdynamik = động lực học ô tô', 'Querdynamik = động lực học ngang', 'Längsdynamik = động lực học dọc', 'Schwerpunkt = trọng tâm',
+    'Radlast = tải trọng bánh xe', 'Schlupf = độ trượt', 'Reibwert = hệ số bám', 'Schräglaufwinkel = góc lệch bên', 'Eigenlenkverhalten = đặc tính tự quay vòng',
+    'untersteuernd = quay vòng thiếu', 'übersteuernd = quay vòng thừa', 'Federung = hệ thống treo', 'Dämpfer = giảm chấn', 'Fahrwerk = khung gầm',
+    'Lenkung = hệ thống lái', 'Bremse = phanh', 'Thermomanagement = quản lý nhiệt', 'Wärmepumpe = bơm nhiệt', 'Kühlkreislauf = mạch làm mát',
+    'Hochvolt = cao áp', 'Steuergerät = bộ điều khiển (ECU)', 'Regelung = điều khiển vòng kín', 'Übertragungsfunktion = hàm truyền',
+    'Sollwert = giá trị đặt', 'Istwert = giá trị thực', 'Verbrennungsmotor = động cơ đốt trong', 'Hybridfahrzeug = xe hybrid', 'Brennstoffzelle = pin nhiên liệu',
+    'Klausur = bài thi', 'Übung = buổi bài tập', 'Vorlesung = bài giảng',
+  ];
+  const parseTerms = (txt) => txt.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const [de, vi] = l.split('='); return { de: de.trim(), vi: (vi || '').trim() }; }).filter((t) => t.de);
+  const allTerms = () => [...parseTerms(settings.glossary), ...parseTerms(BASE_TERMS.join('\n'))];
+
+  const exTime = new Date(); exTime.setHours(10, 15, 2, 0);
+  const EXAMPLES = [
+    { de: 'Heute beschäftigen wir uns mit dem Wirkungsgrad von permanenterregten Synchronmaschinen, und zwar vor allem im Teillastbereich.',
+      vi: 'Hôm nay chúng ta sẽ tìm hiểu hiệu suất (Wirkungsgrad) của máy điện đồng bộ nam châm vĩnh cửu (permanenterregte Synchronmaschine), chủ yếu ở vùng tải một phần (Teillastbereich).' },
+    { de: 'Dort sinkt der Wirkungsgrad deutlich, weil dann die Eisenverluste gegenüber den Kupferverlusten dominieren.',
+      vi: 'Ở vùng đó hiệu suất giảm rõ rệt, vì khi ấy tổn hao sắt (Eisenverluste) chiếm ưu thế so với tổn hao đồng (Kupferverluste).' },
+  ].map((e, i) => ({ id: 'ex' + i, ts: exTime.getTime() + i * 9000, de: e.de, vi: e.vi, status: 'done', engine: 'claude', example: true }));
+
+  // ---------- state ----------
+  let segments = store.get('hd.session', null);
+  let showingExamples = false;
+  if (Array.isArray(segments) && segments.length) segments.forEach((s) => { if (s.status === 'pending') { s.status = 'error'; } });
+  else { segments = EXAMPLES.slice(); showingExamples = true; }
+  let listenMs = store.get('hd.listenMs', 0) || 0, runStartedAt = 0, running = false, idCounter = 0;
+  let carryText = '';               // unfinished sentence returned by Claude, prepended to the next paragraph
+  let carryTs = 0;
+
+  const feed = $('#feed'), list = $('#feed-list'), els = new Map();
+  const liveDe = $('#live-de'), liveVi = $('#live-vi');
+  const toggleBtn = $('#toggle'), statusEl = $('#status'), statusText = $('#status-text');
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmtTime = (ts) => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+  const isoDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const words = (t) => (t.trim() ? t.trim().split(/\s+/).length : 0);
+  const newId = () => 's' + Date.now().toString(36) + (idCounter++);
+
+  let toastTimer = null; const lastToast = new Map();
+  function notify(msg, ms = 4200) {
+    const now = Date.now(); if (lastToast.has(msg) && now - lastToast.get(msg) < 30000) return; lastToast.set(msg, now);
+    const t = $('#toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+  }
+  function fetchT(url, opts = {}, ms = 10000) {
+    const c = new AbortController(); const timer = setTimeout(() => c.abort(), ms);
+    return fetch(url, Object.assign({}, opts, { signal: c.signal })).finally(() => clearTimeout(timer));
+  }
+  function chunkWords(text, max = 1400) {
+    const out = []; let cur = '';
+    for (const w of text.split(/\s+/)) { if (cur && cur.length + 1 + w.length > max) { out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w; }
+    if (cur) out.push(cur); return out;
+  }
+
+  // ---------- translation engines ----------
+  async function googleTranslate(text) {
+    const parts = [];
+    for (const chunk of chunkWords(text)) {
+      const r = await fetchT('https://translate.googleapis.com/translate_a/single?client=gtx&sl=de&tl=vi&dt=t&q=' + encodeURIComponent(chunk), {}, 8000);
+      if (!r.ok) throw new Error('Google ' + r.status);
+      const j = await r.json(); parts.push((j[0] || []).map((x) => x[0]).join(''));
+    }
+    const out = parts.join(' ').trim(); if (!out) throw new Error('Google trả về rỗng'); return out;
+  }
+  let odTranslator = null, odPromise = null;
+  const odSupported = () => 'Translator' in self;
+  function odAvailability() {
+    if (!odSupported()) return Promise.resolve('unavailable');
+    return Promise.race([self.Translator.availability({ sourceLanguage: 'de', targetLanguage: 'vi' }), new Promise((r) => setTimeout(() => r('unknown'), 5000))]).catch(() => 'unknown');
+  }
+  async function ensureOnDevice() {
+    if (odTranslator) return odTranslator;
+    if (!odSupported()) throw new Error('Trình duyệt không có dịch offline');
+    if (!odPromise) odPromise = (async () => {
+      const a = await self.Translator.availability({ sourceLanguage: 'de', targetLanguage: 'vi' });
+      if (a === 'unavailable') throw new Error('Chrome không hỗ trợ Đức → Việt offline');
+      odTranslator = await self.Translator.create({ sourceLanguage: 'de', targetLanguage: 'vi',
+        monitor(m) { m.addEventListener('downloadprogress', (e) => notify(`Đang tải mô hình dịch offline: ${Math.round((e.loaded || 0) * 100)}%`, 2500)); } });
+      return odTranslator;
+    })().catch((e) => { odPromise = null; throw e; });
+    return odPromise;
+  }
+  const onDeviceTranslate = async (text) => (await (await ensureOnDevice()).translate(text)).trim();
+
+  let googleBackoffUntil = 0;
+  async function translateFast(text) {
+    const order = settings.engine === 'ondevice' ? ['ondevice', 'google'] : ['google', 'ondevice'];
+    let lastErr = null;
+    for (const eng of order) {
+      if (eng === 'google' && Date.now() < googleBackoffUntil && odTranslator) continue;
+      if (eng === 'ondevice' && !odSupported()) continue;
+      try { return { vi: eng === 'google' ? await googleTranslate(text) : await onDeviceTranslate(text), used: eng }; }
+      catch (e) { lastErr = e; if (eng === 'google') googleBackoffUntil = Date.now() + 60000; }
+    }
+    throw lastErr || new Error('Không có bộ dịch nào dùng được');
+  }
+
+  function parseJSON(s) {
+    try { return JSON.parse(s); } catch {}
+    const a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if (a >= 0 && b > a) { try { return JSON.parse(s.slice(a, b + 1)); } catch {} }
+    return null;
+  }
+  // One call: rebuild complete sentences from the recognised fragments, translate them, and hand back any unfinished tail.
+  async function claudeParagraph(text, context, final) {
+    const topic = settings.topic.trim() || 'Fahrzeugtechnik / Elektromobilität';
+    const terms = allTerms().slice(0, 120).map((t) => t.vi ? `${t.de} = ${t.vi}` : t.de).join('; ');
+    const system = [
+      'You are a live interpreter for a German engineering lecture, working for a Vietnamese master\'s student.',
+      `Lecture subject: ${topic}.`,
+      'Input is raw German speech recognition: no punctuation, misheard words (especially technical terms), fillers (äh, ähm, also, ne), repetitions, and sentence boundaries in the wrong places.',
+      `Domain vocabulary (German = Vietnamese): ${terms}.`,
+      'Steps: (1) Using the subject, the vocabulary and the previous context, work out what the lecturer actually said and rewrite it as clean, punctuated German; fix misheard technical terms, drop fillers and false starts, never add content. (2) Translate it into natural Vietnamese as used in Vietnamese engineering education; keep formulas, symbols, numbers and units exact.' +
+        (settings.keepTerms ? ' For technical terms write the Vietnamese term followed by the German term in parentheses, e.g. "hiệu suất (Wirkungsgrad)", once per paragraph.' : ''),
+      final
+        ? '(3) Translate everything; "rest" must be "".'
+        : '(3) If the input ends in the middle of a sentence (the lecturer is still speaking), leave that unfinished tail out and return it in "rest" exactly as it appears in the input; it will be joined with what comes next.',
+      'Reply with ONLY a JSON object: {"de": "clean German", "vi": "Vietnamese translation", "rest": "unfinished tail or empty string"}. If nothing is complete yet, use "" for de and vi and put everything in rest.',
+    ].join('\n');
+    const user = (context.length ? 'Previous context (already translated, do not repeat):\n' + context.join('\n') + '\n\n' : '') + 'NEW TEXT:\n' + text;
+    const r = await fetchT('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: settings.model || 'claude-haiku-5-5', max_tokens: 1500, system, messages: [{ role: 'user', content: user }] }),
+    }, 30000);
+    if (!r.ok) { let msg = ''; try { const j = await r.json(); msg = (j.error && j.error.message) || ''; } catch {} throw new Error(`Claude ${r.status}${msg ? ': ' + msg : ''}`); }
+    const j = await r.json();
+    const out = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    const o = parseJSON(out);
+    if (!o) return { de: text, vi: out, rest: '' };
+    return { de: String(o.de || '').trim(), vi: String(o.vi || '').trim(), rest: final ? '' : String(o.rest || '').trim() };
+  }
+  const useClaude = () => settings.engine === 'claude' && !!settings.apiKey;
+
+  // ---------- paragraph pipeline ----------
+  // Recognition keeps running the whole time. Finished paragraphs go into a queue that a single worker translates in order.
+  const queue = [];   // { seg, text, final }
+  let working = false;
+
+  function enqueue(text, ts, final) {
+    text = text.replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    clearExamples();
+    if (useClaude()) {
+      queue.push({ text, ts, final });
+      pump();
+    } else {
+      const seg = addSeg({ ts, de: text, status: 'pending' });
+      translateFast(text).then(({ vi, used }) => { seg.vi = vi; seg.engine = used; seg.status = 'done'; })
+        .catch(() => { seg.status = 'error'; notify('Không dịch được. Kiểm tra mạng hoặc chọn bộ dịch khác trong Cài đặt.'); })
+        .finally(() => { keepPinned(() => renderSeg(seg)); save(); });
+    }
+    updateQueueInfo();
+  }
+
+  async function pump() {
+    if (working) return;
+    working = true;
+    try {
+      while (queue.length) {
+        // If the lecturer outpaces translation, merge everything waiting into one call.
+        const items = queue.splice(0, queue.length);
+        const final = items.some((x) => x.final);
+        const ts = carryText ? carryTs : items[0].ts;
+        const text = (carryText ? carryText + ' ' : '') + items.map((x) => x.text).join(' ');
+        carryText = '';
+        updateQueueInfo(text);
+        const context = segments.filter((s) => !s.example && s.status === 'done').slice(-2).map((s) => s.de);
+        try {
+          const res = await claudeParagraph(text, context, final);
+          if (res.vi) {
+            const seg = addSeg({ ts, de: res.de || text, vi: res.vi, status: 'done', engine: 'claude' });
+            keepPinned(() => renderSeg(seg));
+          }
+          if (res.rest) { carryText = res.rest; carryTs = res.vi ? Date.now() : ts; }
+        } catch (e) {
+          notify(`${e.message}. Đoạn này dịch tạm bằng Google.`, 6000);
+          const seg = addSeg({ ts, de: text, status: 'pending' });
+          try { const { vi, used } = await translateFast(text); seg.vi = vi; seg.engine = used; seg.status = 'done'; } catch { seg.status = 'error'; }
+          keepPinned(() => renderSeg(seg));
+        }
+        save();
+      }
+    } finally {
+      working = false; updateQueueInfo();
+      renderLive();
+    }
+  }
+  function updateQueueInfo(sending) {
+    const n = queue.length + (working ? 1 : 0);
+    $('#queue-info').textContent = n ? `đang dịch ${n} đoạn…` : '';
+  }
+
+  // ---------- rendering ----------
+  function addSeg(o) {
+    const seg = Object.assign({ id: newId(), vi: '', engine: '' }, o);
+    segments.push(seg);
+    keepPinned(() => { renderSeg(seg); updateEmpty(); });
+    updateCount(); save();
+    return seg;
+  }
+  function renderSeg(seg) {
+    let el = els.get(seg.id);
+    if (!el) {
+      el = document.createElement('article'); el.className = 'seg';
+      el.innerHTML = '<div class="meta"><time></time><span class="tag" hidden>Ví dụ</span><span class="eng"></span></div><p class="vi" lang="vi"></p><p class="de" lang="de"></p><button class="btn retry" type="button" hidden>Dịch lại</button>';
+      el.querySelector('.retry').addEventListener('click', () => {
+        seg.status = 'pending'; renderSeg(seg);
+        translateFast(seg.de).then(({ vi, used }) => { seg.vi = vi; seg.engine = used; seg.status = 'done'; }).catch(() => { seg.status = 'error'; }).finally(() => { renderSeg(seg); save(); });
+      });
+      list.appendChild(el); els.set(seg.id, el);
+    }
+    el.querySelector('time').textContent = fmtTime(seg.ts);
+    el.querySelector('.tag').hidden = !seg.example;
+    el.querySelector('.de').textContent = seg.de;
+    el.classList.toggle('pending', seg.status === 'pending'); el.classList.toggle('error', seg.status === 'error');
+    el.querySelector('.vi').textContent = seg.status === 'pending' ? 'Đang dịch…' : seg.status === 'error' ? 'Chưa dịch được.' : seg.vi;
+    el.querySelector('.retry').hidden = seg.status !== 'error';
+    el.querySelector('.eng').textContent = seg.engine ? ENGINE_LABEL[seg.engine] || '' : '';
+  }
+  function updateEmpty() { $('#empty').hidden = segments.length > 0; $('#example-note').hidden = !showingExamples; }
+  const nearBottom = () => feed.scrollHeight - feed.scrollTop - feed.clientHeight < 140;
+  function keepPinned(fn) { const pinned = nearBottom(); fn(); if (pinned) feed.scrollTop = feed.scrollHeight; else $('#jump').hidden = false; }
+  feed.addEventListener('scroll', () => { if (nearBottom()) $('#jump').hidden = true; });
+  $('#jump').addEventListener('click', () => { feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' }); $('#jump').hidden = true; });
+  let saveTimer = null;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      store.set('hd.session', segments.filter((s) => !s.example).map(({ id, ts, de, vi, status, engine }) => ({ id, ts, de, vi, status, engine })));
+      store.set('hd.listenMs', currentListenMs());
+    }, 400);
+  }
+  function removeSegs(pred) { segments = segments.filter((s) => { if (pred(s)) { const el = els.get(s.id); if (el) el.remove(); els.delete(s.id); return false; } return true; }); }
+  function clearExamples() { if (!showingExamples) return; removeSegs((s) => s.example); showingExamples = false; updateEmpty(); }
+
+  // ---------- microphone (asked once, kept open) ----------
+  let micStream = null, micTrack = null, audioCtx = null, analyser = null, meterRaf = 0;
+  async function ensureMic() {
+    if (micTrack && micTrack.readyState === 'live') return true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
+      micTrack = micStream.getAudioTracks()[0];
+      micTrack.addEventListener('ended', () => { micTrack = null; if (running) notify('Micro bị ngắt. Kiểm tra micro rồi bấm lại “Bắt đầu nghe”.', 7000); });
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser(); analyser.fftSize = 512;
+        audioCtx.createMediaStreamSource(micStream).connect(analyser);
+        startMeter();
+      } catch {}
+      return true;
+    } catch (e) {
+      if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+        setStatus('error', 'Micro bị chặn');
+        notify('Trình duyệt đang chặn micro. Bấm biểu tượng bên trái thanh địa chỉ → cho phép Micro, rồi bấm lại “Bắt đầu nghe”.', 9000);
+      } else if (e && e.name === 'NotFoundError') { setStatus('error', 'Không thấy micro'); notify('Không tìm thấy micro trên máy.', 7000); }
+      return false;
+    }
+  }
+  function startMeter() {
+    const buf = new Uint8Array(analyser.fftSize); const bar = $('#meter');
+    cancelAnimationFrame(meterRaf);
+    const loop = () => {
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0; for (const v of buf) { const x = (v - 128) / 128; sum += x * x; }
+      bar.style.width = (running ? Math.min(100, Math.sqrt(sum / buf.length) * 400) : 0) + '%';
+      meterRaf = requestAnimationFrame(loop);
+    };
+    loop();
+  }
+
+  // ---------- speech recognition ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, paraText = '', paraTs = 0, interimText = '', lastHeard = 0, lastStartAt = 0, quickEnds = 0, trackStartOk = true;
+
+  function startRec() {
+    if (!rec || !running) return;
+    lastStartAt = Date.now();
+    // Chrome can listen on the track we already opened, so restarting never asks for permission again.
+    if (trackStartOk && micTrack && micTrack.readyState === 'live') {
+      try { rec.start(micTrack); return; } catch (e) { if (e && e.name === 'InvalidStateError') return; trackStartOk = false; }
+    }
+    try { rec.start(); } catch {}
+  }
+  function makeRec() {
+    const r = new SR();
+    r.lang = 'de-DE'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+    try {
+      if ('SpeechRecognitionPhrase' in window) r.phrases = allTerms().slice(0, 100).map((t) => new window.SpeechRecognitionPhrase(t.de, 5.0));
+    } catch {}
+    r.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) { const t = res[0].transcript.trim(); if (t) { if (!paraText) paraTs = Date.now(); paraText += (paraText ? ' ' : '') + t; } }
+        else interim += res[0].transcript;
+      }
+      interimText = interim.trim();
+      lastHeard = Date.now(); quickEnds = 0;
+      if (running) setStatus('listening');
+      renderLive(); scheduleDraft();
+    };
+    r.onerror = (e) => {
+      switch (e.error) {
+        case 'no-speech': case 'aborted': break;
+        case 'audio-capture': setStatus('error', 'Không thấy micro'); notify('Không nhận được âm thanh từ micro.', 7000); break;
+        case 'not-allowed': case 'service-not-allowed': stop(); setStatus('error', 'Micro bị chặn'); notify('Trình duyệt chặn nhận dạng giọng nói. Cho phép Micro rồi bấm lại “Bắt đầu nghe”.', 9000); break;
+        case 'network': setStatus('error', 'Mất mạng, thử lại…'); notify('Mất kết nối. Đang thử lại…'); break;
+        case 'language-not-supported': stop(); setStatus('error', 'Không hỗ trợ tiếng Đức'); break;
+        default: break;
+      }
+    };
+    r.onend = () => {
+      if (interimText) { if (!paraText) paraTs = Date.now(); paraText += (paraText ? ' ' : '') + interimText; interimText = ''; }
+      if (!running) { flushParagraph(true); return; }
+      quickEnds = Date.now() - lastStartAt < 1500 ? quickEnds + 1 : 0;
+      setTimeout(startRec, quickEnds > 2 ? Math.min(250 * 2 ** quickEnds, 5000) : 0); // restart immediately
+    };
+    return r;
+  }
+
+  // Close a paragraph only on a real pause, or when it gets very long (Claude keeps any half sentence for the next one).
+  const MAX_WORDS = 90;
+  function flushParagraph(final) {
+    const text = paraText; const ts = paraTs || Date.now();
+    paraText = ''; resetDraft();
+    if (text.trim()) enqueue(text, ts, final);
+    else if (final && carryText && useClaude()) { queue.push({ text: '', ts, final: true }); pump(); }
+    renderLive();
+  }
+  setInterval(() => {
+    if (!running) return;
+    const quiet = Date.now() - lastHeard;
+    if (paraText && !interimText && quiet > settings.pause * 1000) flushParagraph(false);
+    else if (words(paraText) >= MAX_WORDS) flushParagraph(false);
+    else if (!paraText && !interimText && carryText && !working && quiet > 6000) flushParagraph(true); // lecturer stopped: finish the dangling sentence
+  }, 200);
+
+  function renderLive() {
+    const done = [carryText, paraText].filter(Boolean).join(' ');
+    liveDe.replaceChildren();
+    if (done) liveDe.append(done + ' ');
+    if (interimText) { const s = document.createElement('span'); s.className = 'interim'; s.textContent = interimText; liveDe.append(s); }
+  }
+
+  // draft translation of the paragraph being built
+  let draftTimer = null, draftReq = 0, lastDraft = '';
+  function scheduleDraft() {
+    if (!settings.interim || draftTimer) return;
+    draftTimer = setTimeout(async () => {
+      draftTimer = null;
+      const t = [carryText, paraText, interimText].filter(Boolean).join(' ').trim();
+      if (!t || t === lastDraft || words(t) < 4) return;
+      lastDraft = t; const id = ++draftReq;
+      try { const { vi } = await translateFast(t); if (id === draftReq) liveVi.textContent = vi; } catch {}
+    }, 1500);
+  }
+  function resetDraft() { draftReq++; lastDraft = ''; clearTimeout(draftTimer); draftTimer = null; liveVi.textContent = ''; }
+
+  // ---------- run control ----------
+  let wake = null;
+  async function requestWake() { try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch {} }
+  function releaseWake() { try { if (wake) wake.release(); } catch {} wake = null; }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && running) requestWake(); });
+  const currentListenMs = () => listenMs + (running && runStartedAt ? Date.now() - runStartedAt : 0);
+  function tickClock() { const s = Math.floor(currentListenMs() / 1000), hh = Math.floor(s / 3600); $('#clock').textContent = (hh ? hh + ':' : '') + `${pad(Math.floor(s % 3600 / 60))}:${pad(s % 60)}`; }
+  setInterval(tickClock, 1000);
+  function setStatus(state, text) { statusEl.dataset.state = state; statusText.textContent = text || ({ idle: 'Sẵn sàng', listening: 'Đang nghe', paused: 'Tạm dừng', error: 'Lỗi' })[state]; }
+  function updateCount() { const n = segments.filter((s) => !s.example).length; $('#sub').textContent = (settings.topic.trim() || 'Đức → Việt · trực tiếp') + (n ? ` · ${n} đoạn` : ''); }
+
+  async function start() {
+    if (!SR) { notify('Trình duyệt này không có nhận dạng giọng nói. Hãy dùng Chrome hoặc Edge.'); return; }
+    if (settings.engine === 'claude' && !settings.apiKey) notify('Chưa nhập Claude API key, tạm dùng Google. Mở Cài đặt để thêm key.', 6000);
+    clearExamples();
+    if (odSupported()) {
+      if (settings.engine === 'ondevice') ensureOnDevice().catch((e) => notify(e.message));
+      else odAvailability().then((a) => { if (a === 'available') ensureOnDevice().catch(() => {}); });
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    const micOk = await ensureMic();               // the only permission prompt
+    if (!micOk && micStream === null && statusEl.dataset.state === 'error') return;
+    if (!rec) rec = makeRec();
+    running = true; runStartedAt = Date.now(); quickEnds = 0; lastHeard = Date.now();
+    startRec();
+    setStatus('listening'); toggleBtn.textContent = 'Tạm dừng'; toggleBtn.classList.add('on');
+    requestWake();
+  }
+  function stop() {
+    if (running) { listenMs += Date.now() - runStartedAt; runStartedAt = 0; }
+    running = false;
+    try { if (rec) rec.stop(); } catch {}
+    flushParagraph(true);
+    setStatus('paused'); toggleBtn.textContent = 'Tiếp tục nghe'; toggleBtn.classList.remove('on');
+    releaseWake(); save();
+  }
+  toggleBtn.addEventListener('click', () => (running ? stop() : start()));
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' || e.repeat) return;
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(tag) || !$('#sheet').hidden) return;
+    e.preventDefault(); running ? stop() : start();
+  });
+
+  // ---------- export / clear ----------
+  $('#export').addEventListener('click', () => {
+    const real = segments.filter((s) => !s.example);
+    if (!real.length) { notify('Chưa có nội dung để lưu.'); return; }
+    const d = new Date(real[0].ts); const topic = settings.topic.trim();
+    const head = `Vorlesung${topic ? ' – ' + topic : ''} – ${d.toLocaleDateString('de-DE')}\nBản dịch tự động (nhận dạng giọng nói + máy dịch). Có thể có lỗi.\n\n`;
+    const body = real.map((s) => `[${fmtTime(s.ts)}]\nVI: ${s.status === 'done' ? s.vi : '(chưa dịch)'}\nDE: ${s.de}\n`).join('\n');
+    const a = document.createElement('a');
+    const slug = topic ? '-' + topic.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, '-').replace(/^-|-$/g, '').slice(0, 40) : '';
+    a.href = URL.createObjectURL(new Blob([head + body], { type: 'text/plain;charset=utf-8' })); a.download = `vorlesung-${isoDate(d)}${slug}.txt`;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  });
+  const clearBtn = $('#clear'); let clearArmed = null;
+  clearBtn.addEventListener('click', () => {
+    if (!clearArmed) { clearBtn.textContent = 'Bấm lần nữa để xoá'; clearArmed = setTimeout(() => { clearArmed = null; clearBtn.textContent = 'Xoá'; }, 3500); return; }
+    clearTimeout(clearArmed); clearArmed = null; clearBtn.textContent = 'Xoá';
+    removeSegs(() => true); showingExamples = false; carryText = ''; paraText = ''; queue.length = 0;
+    listenMs = 0; if (running) runStartedAt = Date.now();
+    store.del('hd.session'); store.del('hd.listenMs');
+    resetDraft(); renderLive(); updateEmpty(); updateCount(); tickClock(); notify('Đã xoá bản ghi.');
+  });
+
+  // ---------- settings ----------
+  function applyDisplay() {
+    document.documentElement.style.setProperty('--vi-size', settings.fontSize + 'px');
+    $('#font-size-val').textContent = settings.fontSize + ' px';
+    $('#pause-val').textContent = settings.pause.toFixed(1).replace('.', ',') + ' giây';
+    document.body.classList.toggle('no-de', !settings.showDe);
+    $('#claude-box').hidden = settings.engine !== 'claude';
+    updateCount();
+  }
+  function bind(id, key, ev = 'input', get = (el) => el.value) {
+    const el = $(id);
+    if (el.type === 'checkbox') el.checked = settings[key]; else el.value = settings[key];
+    el.addEventListener(ev, () => { settings[key] = get(el); saveSettings(); applyDisplay(); });
+  }
+  document.querySelectorAll('input[name=engine]').forEach((r) => {
+    r.checked = r.value === settings.engine;
+    r.addEventListener('change', () => {
+      if (!r.checked) return; settings.engine = r.value; saveSettings(); applyDisplay();
+      if (r.value === 'ondevice') ensureOnDevice().then(() => notify('Dịch offline đã sẵn sàng.')).catch((e) => notify(e.message));
+    });
+  });
+  bind('#api-key', 'apiKey', 'input', (el) => el.value.trim());
+  bind('#model', 'model', 'change');
+  bind('#keep-terms', 'keepTerms', 'change', (el) => el.checked);
+  bind('#topic', 'topic');
+  bind('#glossary', 'glossary');
+  bind('#pause', 'pause', 'input', (el) => +el.value);
+  bind('#font-size', 'fontSize', 'input', (el) => +el.value);
+  bind('#show-de', 'showDe', 'change', (el) => el.checked);
+  bind('#interim', 'interim', 'change', (el) => el.checked);
+  $('#glossary').addEventListener('change', () => { if (rec) { try { if ('SpeechRecognitionPhrase' in window) rec.phrases = allTerms().slice(0, 100).map((t) => new window.SpeechRecognitionPhrase(t.de, 5.0)); } catch {} } });
+  $('#test-key').addEventListener('click', async () => {
+    const out = $('#test-out');
+    if (!settings.apiKey) { out.textContent = 'Hãy nhập key trước.'; return; }
+    out.textContent = 'Đang thử…';
+    try { const r = await claudeParagraph('guten morgen wir beginnen heute mit dem wirkungs grad der elektrischen maschine', [], true); out.textContent = '✓ ' + r.vi; }
+    catch (e) { out.textContent = '✗ ' + e.message; }
+  });
+  const sheet = $('#sheet');
+  const openSheet = () => { sheet.hidden = false; $('#close-settings').focus(); };
+  const closeSheet = () => { sheet.hidden = true; $('#open-settings').focus(); };
+  $('#open-settings').addEventListener('click', openSheet);
+  $('#close-settings').addEventListener('click', closeSheet);
+  sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !sheet.hidden) closeSheet(); });
+
+  (async () => {
+    const note = $('#od-note'), radio = $('#eng-ondevice');
+    if (!odSupported()) { note.textContent = 'Không có trên trình duyệt này (cần Chrome 138 trở lên trên máy tính).'; radio.disabled = true; if (settings.engine === 'ondevice') { settings.engine = 'google'; $('#eng-google').checked = true; saveSettings(); } return; }
+    const a = await odAvailability();
+    if (a === 'unavailable') { note.textContent = 'Chrome chưa hỗ trợ cặp Đức → Việt offline.'; radio.disabled = true; }
+    else if (a === 'available') note.textContent = 'Đã sẵn sàng. Không cần mạng, nhưng kém chính xác hơn.';
+    else note.textContent = 'Chrome sẽ tải mô hình dịch một lần khi bạn chọn mục này.';
+  })();
+
+  // ---------- boot ----------
+  if (!SR) { $('#unsupported').hidden = false; toggleBtn.disabled = true; }
+  if (location.protocol === 'file:') $('#file-warning').hidden = false;
+  applyDisplay();
+  segments.forEach(renderSeg); updateEmpty(); updateCount(); tickClock();
+  if (!showingExamples) { setStatus('paused'); toggleBtn.textContent = 'Tiếp tục nghe'; feed.scrollTop = feed.scrollHeight; }
+})();
+</script>
+</body>
+</html>
